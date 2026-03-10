@@ -1,0 +1,117 @@
+// SPDX-License-Identifier: BSD-3-Clause
+/*
+ * Qualcomm Robotics EB5 platform based on QRB5165/RB5
+ */
+
+/dts-v1/;
+
+#include "qrb5165-rb5.dts"
+
+/ {
+	model = "Qualcomm Technologies, Inc. qrb5165 IOT EB5";
+	compatible = "qcom,kona-iot", "qcom,kona", "qcom,iot",
+		     "qcom,eb5", "qcom,qrb5165-rb5", "qcom,sm8250";
+
+	aliases {
+		ufshc1 = &ufs_mem_hc;
+		pci-domain0 = &pcie0;
+		pci-domain1 = &pcie1;
+		pci-domain2 = &pcie2;
+	};
+};
+
+&pcie1 {
+	status = "okay";
+	max-link-speed = <2>;
+	num-lanes = <2>;
+	wake-gpios = <&tlmm 84 GPIO_ACTIVE_HIGH>;
+	perst-gpios = <&tlmm 82 GPIO_ACTIVE_LOW>;
+	vdda-supply = <&vreg_l9a_1p2>;
+	vddpe-3v3-supply = <&vreg_l11c_3p3>;
+	/*
+	 * Remove iommu-map so qcom_pcie_config_sid_1_9_0() returns early
+	 * and never clears BDF_TO_SID_BYPASS.  With bypass ON (hardware
+	 * default), inbound PCIe completions skip SMMU BDF-to-SID lookup.
+	 *
+	 * Background: during PCI bus walk the SMMU has no context banks for
+	 * downstream-device SIDs yet (iommu_attach_device() is called only
+	 * after device_add(), i.e. AFTER the first config read).  The vendor
+	 * msm_pcie driver never touches BDF_TO_SID_CFG, so bypass stays ON
+	 * there and ASM2806 completions flow through unblocked.
+	 */
+	/delete-property/ iommu-map;
+	/*
+	 * Append the helper as an extra clock entry so fw_devlink ensures
+	 * the helper probes (and gpio141 is driven) before qcom-pcie probes.
+	 * qcom-pcie only requests clocks by the names it knows; "lan-en" is
+	 * silently ignored by the driver but honored by fw_devlink.
+	 */
+	clocks = <&gcc GCC_PCIE_1_PIPE_CLK>,
+		 <&gcc GCC_PCIE_1_AUX_CLK>,
+		 <&gcc GCC_PCIE_1_CFG_AHB_CLK>,
+		 <&gcc GCC_PCIE_1_MSTR_AXI_CLK>,
+		 <&gcc GCC_PCIE_1_SLV_AXI_CLK>,
+		 <&gcc GCC_PCIE_1_SLV_Q2A_AXI_CLK>,
+		 <&gcc GCC_PCIE_WIGIG_CLKREF_EN>,
+		 <&gcc GCC_AGGRE_NOC_PCIE_TBU_CLK>,
+		 <&gcc GCC_DDRSS_PCIE_SF_TBU_CLK>,
+		 <&eb5_pcie1_helper>;
+	clock-names = "pipe", "aux", "cfg", "bus_master", "bus_slave",
+		      "slave_q2a", "ref", "tbu", "ddrss_sf_tbu", "lan-en";
+	pinctrl-0 = <&pcie1_default_state>;
+
+	pcie@0 {
+	};
+};
+
+/*
+ * Lightweight anchor node for the out-of-tree eb5-pcie1-helper kmod.
+ * The driver waits for RC1 link stabilisation and then rescans pcie1 (domain 1)
+ * so the ASM2806 cascade + RTL8168 endpoints can be discovered without any
+ * modifications to qcom.c.
+ */
+/ {
+	eb5_pcie1_helper: eb5-pcie1-helper {
+        compatible = "qcom,eb5-pcie1-helper";
+        lan-en-gpios = <&tlmm 141 GPIO_ACTIVE_HIGH>;
+        #clock-cells = <0>;
+        
+        /* 增加以下两行，绑定物理电气配置 */
+        pinctrl-names = "default";
+        pinctrl-0 = <&pcie1_helper_default>;
+        
+        status = "okay";
+    };
+};
+
+&pcie2 {
+	status = "disabled";
+};
+
+&pcie2_phy {
+	status = "disabled";
+};
+&pcie1_default_state {
+    perst {
+        pins = "gpio82";
+        function = "gpio";
+        drive-strength = <16>;
+        bias-disable;   /* 关键修正：移除 pull-down，防止电流被吸走 */
+    };
+    wake {
+        pins = "gpio84";
+        function = "gpio";
+        drive-strength = <2>;
+        bias-pull-up;
+    };
+};
+&tlmm {
+	pcie1_helper_default: pcie1-helper-default {
+        lan_en {
+            pins = "gpio141";
+            function = "gpio";
+            drive-strength = <16>; /* 强推挽输出 */
+            bias-disable;          /* 移除 pull-down */
+        };
+    };
+};
