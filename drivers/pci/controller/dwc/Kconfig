@@ -315,6 +315,16 @@ config PCIE_QCOM
 	  PCIe controller uses the DesignWare core plus Qualcomm-specific
 	  hardware wrappers.
 
+config PCIE_QCOM_EB5_HELPER
+	bool "Qualcomm EB5 PCIe1 ASM2806 bridge bring-up helper"
+	depends on PCIE_QCOM
+	default MACH_QCOM
+	help
+	  Say Y to enable the EB5 carrier-board helper that rescans the PCIe1
+	  (RC1) downstream bus after link bring-up, allowing the ASMedia ASM2806
+	  cascade bridges and dual Realtek RTL8168 NICs to be enumerated.
+	  Requires the "qcom,eb5-pcie1-helper" DT node in the board DTB.
+
 config PCIE_QCOM_EP
 	tristate "Qualcomm PCIe controller (endpoint mode)"
 	depends on OF && (ARCH_QCOM || COMPILE_TEST)
